@@ -7,14 +7,14 @@
 // This file is licensed under the MIT License (a.k.a. the "Expat License").
 // Repository: https://github.com/shoogle/MuseScore-plugin-SkeletonScore
 //============================================================================
-import QtQuick 2.1
-import QtQuick.Dialogs 1.0
-import QtQuick.Controls 1.0
+import QtQuick 2.9
+import QtQuick.Dialogs 1.2
+import QtQuick.Controls 2.2
 import MuseScore 3.0
 import FileIO 3.0
 
 MuseScore {
-    menuPath: "Plugins.layoutBreaks"
+    menuPath: "Plugins.SkeletonScore"
     version: "1.0"
     description: qsTr("Quickly add line breaks, page breaks, and section breaks to a score to match the layout of a PDF or paper edition.")
     requiresScore: true
@@ -22,7 +22,6 @@ MuseScore {
 
     id:window
     width:  800; height: 500;
-    onRun: {}
 
     FileIO {
         id: myFileAbc
@@ -39,7 +38,7 @@ MuseScore {
             if(filename){
                 myFileAbc.source = filename
                 //read abc file and put it in the TextArea
-                abcText.text = myFileAbc.read()
+                abcTextArea.text = myFileAbc.read()
                 }
             }
         }
@@ -56,7 +55,7 @@ MuseScore {
         }
 
     // Where people can paste their ABC tune or where an ABC file is put when opened
-    TextArea {
+    ScrollView {
         id:abcText
         anchors.top: textLabel.bottom
         anchors.left: window.left
@@ -68,8 +67,50 @@ MuseScore {
         anchors.rightMargin: 10
         width:parent.width
         height:400
-        wrapMode: TextEdit.WrapAnywhere
-        textFormat: TextEdit.PlainText
+        clip: true
+
+        TextArea {
+            id:abcTextArea
+            leftPadding: lineNumbers.width + 10
+            textFormat: TextEdit.PlainText
+            font.family: "monospace"
+            font.pointSize: 16
+
+            background: Rectangle {
+                // x: lineNumbers.width
+                //width: parent.width / 2
+                //color: abcText.enabled ? "#21be2b" : "transparent"
+                }
+            }
+
+        Text {
+            id:lineNumbers
+            leftPadding: 5
+            topPadding: abcTextArea.topPadding
+            color: "gray"
+            font.family: abcTextArea.font.family
+            font.pointSize: abcTextArea.font.pointSize
+            horizontalAlignment: Text.AlignRight
+            text: {
+                var str = "";
+                var newline = false;
+                var page = 0;
+                for (var i = 0; i < abcTextArea.text.length; i++) {
+                    if (abcTextArea.text[i] == "\n") {
+                        if (!newline) {
+                            page++;
+                            str += page;
+                            newline = true;
+                            }
+                        str += "\n";
+                        }
+                    else {
+                        newline = false;
+                        }
+                    }
+                return str + (page + 1);
+                }
+            }
         }
 
     Button {
@@ -81,7 +122,8 @@ MuseScore {
         anchors.bottomMargin: 10
         anchors.leftMargin: 10
         onClicked: {
-            fileDialog.open();
+            abcTextArea.enabled = !abcTextArea.enabled;
+            //fileDialog.open();
             }
         }
 
@@ -114,7 +156,7 @@ MuseScore {
         anchors.bottomMargin: 10
         anchors.rightMargin: 10
         onClicked: {
-            var input = abcText.text.replace(/\r\n/g, "\n"); // replace CRLF with LF
+            var input = abcTextArea.text.replace(/\r\n/g, "\n"); // replace CRLF with LF
             var inputLine = 1;
             var inputCol = 1;
 
@@ -136,6 +178,9 @@ MuseScore {
                 inputCol += matchInt[1].length;
                 input = matchInt[2];
 
+                if (!advanceMeasures(cursor, numMeasures - 1))
+                    break; // reached end of score
+
                 var matchBreak = input.match(/^( |\n+)([\s\S]*)/);
 
                 if (!matchBreak) {
@@ -154,14 +199,21 @@ MuseScore {
                 else {
                     inputLine += matchBreak[1].length;
                     inputCol = 1;
-                    if (matchBreak[1] == "\n")
+                    if (matchBreak[1] == "\n") {
                         lb.layoutBreakType = LayoutBreak.PAGE;
-                    else
+                        }
+                    else {
                         lb.layoutBreakType = LayoutBreak.SECTION;
+                        if (matchBreak[1] != "\n\n") {
+                            // also add a page break
+                            var lb2 = newElement(Element.LAYOUT_BREAK);
+                            lb2.layoutBreakType = LayoutBreak.PAGE;
+                            cursor.add(lb2);
+                            }
+                        }
                     }
                 console.log(qsTr("Skip %1 measures and add a %2 break").arg(numMeasures).arg(layoutBreakToStr(lb)));
-                if (!advanceMeasures(cursor, numMeasures - 1))
-                    break; // reached end of score
+
                 cursor.add(lb);
                 if (!advanceMeasures(cursor, 1))
                     break; // reached end of score
